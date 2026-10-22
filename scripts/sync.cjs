@@ -26,7 +26,7 @@ async function api(endpoint, action, payload = {}, token) {
   if (!res.ok || !body.ok) { const e = new Error(body.error?.message || '请求失败'); e.code = body.error?.code || 'HTTP_ERROR'; throw e; }
   return body.data;
 }
-function inside(root, target) { return target === root || target.startsWith(root + path.sep); }
+function inside(root, target) { const rel = path.relative(root, target); return rel === '' || (!path.isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + path.sep)); }
 function safeDirectory(vault, relative) {
   const root = fs.realpathSync(vault);
   if (!fs.statSync(root).isDirectory()) throw new Error('知识库路径不是文件夹');
@@ -74,7 +74,7 @@ function writeNote(dir, item, endpoint) {
   function existing() {
     const st = fs.lstatSync(dest);
     if (!st.isFile() || st.isSymbolicLink()) throw new Error('目标文件不是普通文件，已停止同步');
-    const body = fs.readFileSync(dest, 'utf8');
+    const body = fs.readFileSync(dest, 'utf8').replace(/\r\n/g, '\n');
     if (!body.startsWith('---\n') || !body.includes(`\ninbox_id: ${JSON.stringify(item._id)}\n`) || !body.includes(`\ninbox_origin: ${JSON.stringify(note.origin)}\n`))
       throw new Error('同名文件冲突，未覆盖原文件');
     return { path: dest, created: false };
@@ -86,8 +86,12 @@ function writeNote(dir, item, endpoint) {
   try {
     try { fs.linkSync(tmp, dest); }
     catch (e) { if (e.code === 'EEXIST') return existing(); throw e; }
-    const directory = fs.openSync(dir, 'r');
-    try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
+    // Windows does not support opening directories for fsync. The file itself
+    // was flushed before the exclusive hard link; never overwrite an existing note.
+    if (process.platform !== 'win32') {
+      const directory = fs.openSync(dir, 'r');
+      try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
+    }
     return { path: dest, created: true };
   } finally { fs.unlinkSync(tmp); }
 }

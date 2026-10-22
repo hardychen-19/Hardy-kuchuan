@@ -13,7 +13,11 @@ description: 从用户绑定的库传微信小程序拉取链接和文字待办�
 
 首次绑定前读取同目录 `scripts/service.json` 确认服务地址。若未配置 endpoint，必须说明真实云端尚未部署，不能拿本地测试服务冒充云端。
 
-查询状态使用 `scripts/inbox.cjs status`，诊断使用 `scripts/inbox.cjs doctor`。运行时凭据由程序从 Mac 钥匙串获取，不把令牌传入命令行、读取到聊天或写入本文件。
+查询状态使用 `scripts/inbox.cjs status`，诊断使用 `scripts/inbox.cjs doctor`。运行时凭据由程序从 Mac 钥匙串或 Windows 当前用户的 DPAPI 加密文件获取，不把令牌传入命令行、读取到聊天或写入本文件。
+
+## 系统与安装
+
+支持原生 Windows 与 macOS。Windows 使用 Windows 版 Node.js 和 PowerShell，不在 WSL/Linux 中绑定。Windows 接收目录使用当前用户可写的本机 NTFS 文件夹（避免网络盘和 FAT/exFAT 移动盘）；默认路径不替用户虚构。凭据只供绑定时的系统用户使用，不跨电脑复制配置或凭据文件；新电脑自行绑定。
 
 ## 首次绑定
 

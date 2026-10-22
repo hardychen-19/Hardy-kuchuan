@@ -3,11 +3,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { execFileSync } = require('node:child_process');
+const { credentialStore } = require('./credentials.cjs');
 const { api, sync, validateEndpoint, safeDirectory } = require('./sync.cjs');
 const root = process.env.INBOX_CONFIG_DIR || path.join(os.homedir(), '.config', 'knowledge-inbox');
 const configPath = path.join(root, 'config.json');
-const SERVICE = 'knowledge-inbox.device';
+const credentials = credentialStore(root);
 function argsOf(args) {
   const result = { command: args.shift() || 'status' };
   while (args.length) {
@@ -24,20 +24,6 @@ function store(config) {
   fs.renameSync(tmp, configPath);
 }
 function keychainAccount(endpoint) { return new URL(endpoint).host + ':' + require('node:crypto').createHash('sha256').update(endpoint).digest('hex').slice(0,16); }
-function keychainWrite(account, token) {
-  if (process.platform !== 'darwin') throw new Error('此MVP的凭据绑定先支持Mac');
-  // security interactive stdin keeps the token out of argv, process listings and shell history.
-  if (!/^[a-f0-9]{64}$/.test(token) || !/^[a-zA-Z0-9.:[\]-]+:[a-f0-9]{16}$/.test(account)) throw new Error('凭据格式错误');
-  execFileSync('/usr/bin/security', ['-i'], {
-    input: `add-generic-password -U -s "${SERVICE}" -a "${account}" -w "${token}"\n`,
-    stdio: ['pipe','pipe','pipe'], timeout: 30000
-  });
-  const stored = keychainRead(account);
-  if (stored !== token) throw new Error('钥匙串保存失败，未记录绑定配置');
-}
-function keychainRead(account) {
-  return execFileSync('/usr/bin/security', ['find-generic-password', '-s', SERVICE, '-a', account, '-w'], { encoding: 'utf8', stdio: ['ignore','pipe','pipe'], timeout: 30000 }).trim();
-}
 function repairLock(config, remove = false) {
   const { dir } = safeDirectory(config.vault, config.subdir);
   const file = path.join(dir, '.inbox-sync.lock');
@@ -59,15 +45,16 @@ async function main(args = process.argv.slice(2)) {
     const vault = fs.realpathSync(a.vault || '');
     const subdir = a.subdir || '00-Inbox/库传'; safeDirectory(vault, subdir);
     if (fs.existsSync(configPath) && a.replace !== 'yes') throw new Error('已有绑定配置；重新绑定请明确添加 --replace yes，旧设备需在小程序解除');
+    const account = keychainAccount(endpoint);
+    credentials.preflight(account);
     const r = await api(endpoint, 'pair.start', { deviceName: a.name || os.hostname() });
     const code = r.userCode;
     console.log(JSON.stringify({ step: 'confirm-in-mini-program', userCode: code, expiresAt: r.expiresAt, message: '请打开库传小程序，填入此绑定码，核对设备后确认。' }));
     while (Date.now() < r.expiresAt) {
       const status = await api(endpoint, 'pair.status', {}, r.deviceToken);
       if (status.status === 'approved') {
-        const account = keychainAccount(endpoint);
-        keychainWrite(account, r.deviceToken);
-        store({ version: 1, endpoint, vault, subdir, keychainAccount: account });
+        credentials.write(account, r.deviceToken);
+        store({ version: 1, endpoint, vault, subdir, keychainAccount: account, credentialStore: credentials.kind });
         console.log(JSON.stringify({ bound: true, vault, contentStatus: 'links-and-pending-tasks' })); return;
       }
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -75,18 +62,19 @@ async function main(args = process.argv.slice(2)) {
     throw new Error('绑定码已过期，请重新执行 bind');
   }
   const config = load();
+  if (config.credentialStore && config.credentialStore !== credentials.kind) throw new Error('设备配置来自其他系统，请在本机重新绑定，不要复制旧电脑的凭据');
   if (a.command === 'logout') {
-    execFileSync('/usr/bin/security', ['delete-generic-password', '-s', SERVICE, '-a', config.keychainAccount], { stdio: ['ignore','pipe','pipe'] });
+    credentials.remove(config.keychainAccount);
     fs.renameSync(configPath, configPath + '.signed-out-' + Date.now());
     console.log(JSON.stringify({ signedOut: true, message: '本机凭据已移除，请在小程序中解除旧设备。' })); return;
   }
   if (a.command === 'doctor') {
     const lock = repairLock(config, a['repair-lock'] === 'yes');
     const health = await api(config.endpoint, 'health');
-    const device = await api(config.endpoint, 'device.status', {}, keychainRead(config.keychainAccount));
+    const device = await api(config.endpoint, 'device.status', {}, credentials.read(config.keychainAccount));
     console.log(JSON.stringify({ ok: true, vault: config.vault, health, device, ...lock })); return;
   }
-  const token = keychainRead(config.keychainAccount);
+  const token = credentials.read(config.keychainAccount);
   if (a.command === 'status') console.log(JSON.stringify({ ...(await api(config.endpoint, 'device.status', {}, token)), vault: config.vault, subdir: config.subdir }));
   else if (a.command === 'sync') console.log(JSON.stringify(await sync({ ...config, token })));
   else throw new Error('支持 bind、sync、status、doctor、logout');
@@ -96,7 +84,7 @@ if (require.main === module) main().catch(e => {
   const message = e.code === 'ENOTFOUND' || e.name === 'TimeoutError' || e.message === 'fetch failed'
     ? '后端未连接或请求超时，请检查网络与服务地址'
     : e.code === 'UNAUTHORIZED' ? '设备授权已失效，请在小程序重新绑定'
-    : e.message.startsWith('Command failed:') ? '系统钥匙串操作失败，请在Mac上完成授权后重试'
+    : e.message.startsWith('Command failed:') ? '系统凭据操作失败，请检查当前系统用户与授权后重试'
     : e.message;
   console.error(JSON.stringify({ ok: false, error: message, ...(e.partial ? { partial: e.partial } : {}) })); process.exitCode = 1;
 });
