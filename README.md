@@ -19,31 +19,28 @@
 - 原生 Windows 10/11 或 Mac，Node.js **22.13 或以上**。
 - Windows 使用系统 PowerShell 和 Windows 版 Node.js；WSL/Linux 暂不支持。接收文件夹放在本机 NTFS 磁盘，避免网络盘和 FAT/exFAT 移动盘。
 - 支持本地 Skill 与脚本执行的 Codex。
-- 能访问配套的「库传」微信小程序。当前仍处于预览联调，安装 Skill 不会自动获得小程序访问权限。
+- 能访问配套的「库传」微信小程序。当前仍处于体验版联调，安装 Skill 不会自动获得小程序访问权限。
 - 首次同步需联网，Mac 凭据由系统钥匙串保存；Windows 凭据使用 DPAPI CurrentUser 加密保存。
 
-## 安装
+## 用户只需这样做
 
-下载本仓库 ZIP 并解压。在解压文件夹打开终端，运行 `node install.cjs`，安装器会把技能放进当前用户的 `~/.codex/skills/hardy-kuchuan`；已有同名技能时会停止，不覆盖。也可以手动将包含 `SKILL.md` 的文件夹命名为 `hardy-kuchuan`，放到你的 Codex 技能目录，例如：
+把本仓库下载的 ZIP 或仓库地址交给 Codex，说：
 
-```text
-~/.codex/skills/hardy-kuchuan/
-├── SKILL.md
-├── agents/openai.yaml
-└── scripts/
-    ├── inbox.cjs
-    ├── sync.cjs
-    ├── credentials.cjs
-    └── service.json
-```
+> 安装这个 Skill，帮我开始使用库传。
 
-重新打开 Codex 会话，然后说：
+Agent 会读取包内说明，检查运行环境、展示手机入口、准备默认接收目录、生成绑定码，并引导你在手机确认。你不必填写服务地址、自己创建文件夹或复制终端命令。默认接收位置是系统 Documents 下的 `库传收件箱/00-Inbox/库传/`；已有配置继续使用原目录。
 
-> 使用 $hardy-kuchuan，帮我绑定库传。我的本地接收目录是「填写你的绝对路径」。
+之后说 **“收取库传”** 即可。Agent 会拉取内容，报告保存位置；首次收取或你问“在哪看”时会打开目录。文字只作为待确认待办保存。
 
-Codex 会生成一次性绑定码。在库传小程序的“管理”里输入该码，核对电脑名称并确认。之后说：
+当前包附带体验版二维码，注明有效期限；过期后 Agent 会提示获取最新入口。体验版需要管理员添加你的微信号，安装技能不会自动获得访问权限。手机确认设备绑定必须由本人完成。
 
-> 使用 $hardy-kuchuan，同步库传，并列出待确认的任务。
+Skill 是 Agent 的操作说明和程序包，文件下载本身不会主动运行。安装时 Agent 可以接着引导；宿主没有加载技能时，新开会话说“开始使用库传”。缺少 Node 等运行环境时，Agent 会协助处理，系统授权仍由本人完成。
+
+## 给 Agent 的安装说明
+
+用户交付本包即从 `SKILL.md` 开始。找到 Node.js 22.13+ 后，在解压目录执行 `node install.cjs`，安装器将完整技能安装至 CODEX_HOME 或 `~/.codex` 下的 `skills/hardy-kuchuan`。已有同名目录时停止，不覆盖用户文件或设备凭据。可直接从下载目录读取技能并继续引导，安装之后无需再向用户索取长提示词。
+
+包内包括 `scripts/setup.cjs`（离线检查及目录准备）、同步/凭据脚本、手机入口资源及 `references/onboarding.md`（完整排错指引）。无需安装 npm 依赖。主流程见 [SKILL.md](SKILL.md)。
 
 电脑关机时，小程序仍可向已运行的云端服务保存内容；本地文件要等电脑开机并执行同步才会增加。
 
@@ -80,8 +77,8 @@ Windows 自动测试覆盖 DPAPI 保存/读取/损坏拒绝及 CLI 绑定、状�
 ## 新用户测试（Windows＋另一个微信号）
 
 1. 先获得库传体验版入口，并让管理员把自己的微信号加入体验成员。GitHub 技能仓库不提供小程序访问权限。
-2. 安装技能后新开 Codex 会话，指定一个自己可写的本机文件夹，例如 `C:\Users\你的用户名\Documents\库传收件箱`（先创建文件夹）。
-3. 对 Codex 说：使用 `$hardy-kuchuan`，绑定库传，接收目录是“你的绝对路径”；请使用原生 Windows 环境，不用 WSL。
+2. 将下载包或仓库地址交给 Codex，说“安装这个 Skill，帮我开始使用库传”。
+3. Agent 检查原生 Windows 环境并准备默认目录；有自选目录时告诉 Agent 即可，不需要自己创建。
 4. 用自己的微信进入库传“管理”，填写此次电脑生成的绑定码，核对电脑名并确认。不要使用别人电脑上的绑定码或凭据。
 5. 手机先保存 `https://example.com/?kuchuan=windows-user-b`，再保存“Windows 新用户测试：帮我整理课程提纲，先待确认”。
 6. 对 Codex 说：使用 `$hardy-kuchuan` 同步库传，给我文件路径并列出待确认任务，不执行。默认文件在所选目录的 `00-Inbox/库传/`。

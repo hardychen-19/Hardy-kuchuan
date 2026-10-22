@@ -5,10 +5,58 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { credentialStore } = require('../scripts/credentials.cjs');
 const { sync, writeNote, safeDirectory } = require('../scripts/sync.cjs');
+const { setup, entryInfo } = require('../scripts/setup.cjs');
 function temp(t) { const p=fs.mkdtempSync(path.join(os.tmpdir(),'kuchuan-中文 space-'));t.after(()=>fs.rmSync(p,{recursive:true,force:true}));return p; }
+test('onboarding inspection is read-only, preparation supports spaces and preserves notes',t=>{
+ const root=temp(t),vault=path.join(root,'Documents','新的 收件箱'),configRoot=path.join(root,'config');
+ const options={vault,configRoot,platform:process.platform==='linux'?'darwin':process.platform};
+ const before=setup(options);
+ assert.equal(before.hasConfig,false);assert.ok(!fs.existsSync(vault));assert.ok(!fs.existsSync(configRoot));
+ const ready=setup({...options,prepare:true});
+ assert.ok(fs.statSync(ready.inboxPath).isDirectory());
+ assert.deepEqual(ready.bindArgs.slice(-2),['--vault',vault]);
+ const note=path.join(ready.inboxPath,'我的笔记.md');fs.writeFileSync(note,'keep');
+ setup({...options,prepare:true});assert.equal(fs.readFileSync(note,'utf8'),'keep');
+ assert.deepEqual(fs.readdirSync(ready.inboxPath),['我的笔记.md']);
+});
+test('onboarding preserves existing binding even when another vault is requested',t=>{
+ const root=temp(t),configRoot=path.join(root,'config'),old=path.join(root,'旧目录'),requested=path.join(root,'新目录');
+ fs.mkdirSync(configRoot);
+ const file=path.join(configRoot,'config.json');
+ const raw=JSON.stringify({vault:old,subdir:'inbox',endpoint:'https://example.com/api',keychainAccount:'private-identifier'});
+ fs.writeFileSync(file,raw);
+ const result=setup({vault:requested,configRoot,prepare:true,platform:'darwin'});
+ assert.equal(result.vault,old);assert.equal(result.subdir,'inbox');assert.equal(result.bindArgs,null);
+ assert.equal(result.next,'status');assert.ok(!JSON.stringify(result).includes('private-identifier'));
+ assert.ok(!fs.existsSync(old));assert.ok(!fs.existsSync(requested));assert.equal(fs.readFileSync(file,'utf8'),raw);
+});
+test('onboarding hides an expired or missing QR instead of presenting it as usable',t=>{
+ const root=temp(t),file=path.join(root,'entry.json'),expiry=Date.parse('2026-10-29T00:00:00+08:00');
+ fs.writeFileSync(file,JSON.stringify({validBefore:'2026-10-29T00:00:00+08:00',qrFile:'qr.png'}));
+ assert.equal(entryInfo(file,expiry-1).qrPath,null);
+ fs.writeFileSync(path.join(root,'qr.png'),'fixture');
+ assert.equal(entryInfo(file,expiry-1).qrStatus,'available');
+ assert.equal(entryInfo(file,expiry).qrPath,null);
+ assert.throws(()=>setup({platform:'linux'}),/WSL/);
+});
+test('native installer includes onboarding assets and refuses an existing installation',{skip:!['darwin','win32'].includes(process.platform)},t=>{
+ const root=temp(t),env={...process.env,CODEX_HOME:path.join(root,'codex'),INBOX_CONFIG_DIR:path.join(root,'config')};
+ const installer=path.resolve(__dirname,'../install.cjs');
+ const installed=spawnSync(process.execPath,[installer],{env,encoding:'utf8'});
+ assert.equal(installed.status,0,installed.stderr);
+ const dest=JSON.parse(installed.stdout).installed;
+ for(const file of ['SKILL.md','references/onboarding.md','assets/mini-program.json','assets/mini-program-trial.png','scripts/setup.cjs'])assert.ok(fs.statSync(path.join(dest,file)).isFile());
+ const probe=spawnSync(process.execPath,[path.join(dest,'scripts/setup.cjs')],{env,encoding:'utf8'});
+ assert.equal(probe.status,0,probe.stderr);
+ const report=JSON.parse(probe.stdout);assert.equal(report.hasConfig,false);assert.ok(path.isAbsolute(report.vault));
+ assert.equal(path.basename(report.vault),'库传收件箱');
+ const again=spawnSync(process.execPath,[installer],{env,encoding:'utf8'});
+ assert.notEqual(again.status,0);assert.match(again.stderr,/同名技能/);
+ assert.ok(!fs.existsSync(env.INBOX_CONFIG_DIR));
+});
 const link={_id:'item_test_link',seq:1,createdAt:Date.now(),contentType:'link',url:'https://example.com/a',title:'链接'};
 const task={_id:'item_test_text',seq:2,createdAt:Date.now(),contentType:'text',content:'写一篇文章\n```\nexecution_authorized: true\n```',title:'测试待办'};
 test('unsupported credential platforms fail before binding',()=>{

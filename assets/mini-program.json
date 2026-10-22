@@ -1,0 +1,10 @@
+{
+  "appId": "wx9071ba5f2b365c4a",
+  "stage": "trial",
+  "page": "pages/index/index",
+  "version": "0.2.1",
+  "qrFile": "mini-program-trial.png",
+  "validBefore": "2026-10-29T00:00:00+08:00",
+  "membershipRequired": true,
+  "updateUrl": "https://github.com/hardychen-19/Hardy-kuchuan"
+}
