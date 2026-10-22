@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hardy-kuchuan"
+  short_description: "从微信库传同步链接和文字待办到本地，待办等待明确确认后执行"
+  default_prompt: "使用 $hardy-kuchuan 同步我的库传，报告新增链接与待确认待办，不执行任务。"
